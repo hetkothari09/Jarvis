@@ -51,7 +51,7 @@ class Orb(QWidget):
         base = QColor(orb_color(self._state))
         glow = QColor(base)
         glow.setAlpha(90 if self._state == "idle" else int(120 + 100 * self._pulse))
-        grad.setColorAt(0.0, base)
+        grad.setColorAt(0.0, glow)
         grad.setColorAt(1.0, QColor(0, 0, 0, 0))
         p.setBrush(grad)
         p.setPen(Qt.NoPen)

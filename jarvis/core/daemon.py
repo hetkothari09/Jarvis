@@ -1,7 +1,7 @@
 """Compose all modules into a running tray application."""
 import threading
 
-from PySide6.QtCore import QObject, Qt, Signal, QTimer
+from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtGui import QAction, QIcon, QPixmap, QColor, QPainter
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
@@ -25,6 +25,7 @@ class _Bridge(QObject):
     done = Signal(str)
     state = Signal(str)
     summon = Signal()
+    confirm_request = Signal(object)  # payload: (call, result_dict, done_event)
 
 
 def _tray_icon() -> QIcon:
@@ -62,6 +63,9 @@ class Daemon:
         self.bridge.done.connect(self.palette.show_result)
         self.bridge.state.connect(self.orb.set_state)
         self.bridge.summon.connect(self.palette.summon)
+        # Emitted from the worker thread; AutoConnection makes it a queued call
+        # dispatched on the main (Qt) thread, where the modal can safely run.
+        self.bridge.confirm_request.connect(self._do_confirm)
         self.palette.submitted.connect(self._on_command)
 
         self.tray = QSystemTrayIcon(_tray_icon())
@@ -87,7 +91,7 @@ class Daemon:
             self.bridge.step.emit(f"› {call.name} — {status}")
 
         def confirm(call: ToolCall) -> bool:
-            return _confirm_on_ui(self.palette, call)
+            return self._confirm(call)
 
         try:
             answer = run_command(text, self.registry, self.engine,
@@ -99,22 +103,28 @@ class Daemon:
             self.bridge.done.emit(f"Error: {exc}")
             self.bridge.state.emit("error")
 
+    def _confirm(self, call: ToolCall) -> bool:
+        """Called on the worker thread. Hand the modal to the main thread and block
+        until the user answers. The queued `confirm_request` signal guarantees the
+        dialog runs inside the main thread's event loop (no worker-thread timer,
+        which would never fire and deadlock)."""
+        result: dict = {}
+        done = threading.Event()
+        self.bridge.confirm_request.emit((call, result, done))
+        done.wait()
+        return bool(result.get("ok"))
+
+    def _do_confirm(self, payload: tuple) -> None:
+        """Runs on the main (Qt) thread via the queued confirm_request signal."""
+        call, result, done = payload
+        try:
+            result["ok"] = self.palette.confirm(
+                f"JARVIS wants to run a sensitive action:\n\n"
+                f"{call.name}({call.args})\n\nAllow?")
+        finally:
+            done.set()
+
     def run(self) -> int:
         self.orb.show()
         self.hotkey.start()
         return self.app.exec()
-
-
-def _confirm_on_ui(palette: Palette, call: ToolCall) -> bool:
-    """Run the modal confirm on the Qt thread and block the worker for the answer."""
-    result: dict = {}
-    done = threading.Event()
-
-    def ask() -> None:
-        result["ok"] = palette.confirm(
-            f"JARVIS wants to run a sensitive action:\n\n{call.name}({call.args})\n\nAllow?")
-        done.set()
-
-    QTimer.singleShot(0, ask)
-    done.wait()
-    return bool(result.get("ok"))
