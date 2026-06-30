@@ -60,3 +60,21 @@ def test_second_command_sees_prior_turns_as_history(qapp):
     # the engine's last call must have been seeded with prior turns
     assert eng.last_messages[0].content == "first"
     assert eng.last_messages[-1].content == "second"
+
+
+def test_open_store_falls_back_on_error(monkeypatch):
+    import sqlite3
+    import jarvis.core.daemon as d
+    real = d.Store
+    calls = {"n": 0}
+
+    def flaky(path):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise sqlite3.OperationalError("unable to open database file")
+        return real(":memory:")
+
+    monkeypatch.setattr(d, "Store", flaky)
+    store = d._open_store("X:/nonexistent/jarvis.db")
+    assert store is not None          # did not raise
+    assert calls["n"] == 2            # first failed, fell back to in-memory

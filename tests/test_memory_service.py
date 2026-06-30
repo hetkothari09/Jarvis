@@ -52,3 +52,13 @@ def test_degrades_when_store_raises():
     svc = MemoryService(Boom(), window_min=10, max_facts=10)
     assert svc.session_context(now=1.0) == ("", [])
     svc.record_turn("user", "x", 1.0)          # must not raise
+
+
+def test_session_context_sanitizes_history(mem):
+    mem.record_turn("assistant", "stale reply", 500.0)   # leading assistant -> dropped
+    mem.record_turn("user", "hi", 501.0)
+    mem.record_turn("assistant", "", 502.0)              # empty text -> dropped
+    mem.record_turn("user", "next", 503.0)
+    _, turns = mem.session_context(now=800.0)
+    assert [t.role for t in turns] == ["user", "user"]
+    assert [t.content for t in turns] == ["hi", "next"]

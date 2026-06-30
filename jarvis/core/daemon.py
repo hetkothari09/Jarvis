@@ -1,6 +1,20 @@
 """Compose all modules into a running tray application."""
+import logging
 import threading
 import time
+
+_log = logging.getLogger(__name__)
+
+
+def _open_store(path) -> "Store":
+    """Open the memory store, falling back to an in-memory store if the on-disk
+    DB can't be opened (corrupt, locked, or unwritable dir). A storage failure
+    must never prevent the agent from starting."""
+    try:
+        return Store(path)
+    except Exception:
+        _log.exception("memory store open failed; using in-memory store")
+        return Store(":memory:")
 
 from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtGui import QAction, QIcon, QPixmap, QColor, QPainter
@@ -57,7 +71,7 @@ class Daemon:
                 "set_api_key('sk-ant-...')\"")
         self.engine = ClaudeEngine(client=Anthropic(api_key=key), model=self.settings.model)
         self.mem = MemoryService(
-            Store(self.settings.db_path),
+            _open_store(self.settings.db_path),
             window_min=self.settings.session_window_min,
             max_facts=self.settings.max_facts_injected)
         self.registry = build_registry(self.mem)

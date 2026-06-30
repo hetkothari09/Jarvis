@@ -18,7 +18,7 @@ class MemoryService:
             facts = self._store.list_facts()[: self._max_facts]
             block = "\n".join(self._render_fact(k, t) for _, k, t in facts)
             rows = self._store.turns_since(now - self._window_s)
-            turns = [self._turn_msg(role, text) for role, text in rows]
+            turns = self._sanitize([self._turn_msg(role, text) for role, text in rows])
             return block, turns
         except Exception:
             log.exception("memory session_context failed")
@@ -27,6 +27,16 @@ class MemoryService:
     @staticmethod
     def _render_fact(key, text) -> str:
         return f"- {key}: {text}" if key else f"- {text}"
+
+    @staticmethod
+    def _sanitize(turns: list) -> list:
+        """Make seeded history valid for the message API: drop turns with empty
+        text, then drop any leading non-user turns (history must start with a
+        user message)."""
+        kept = [m for m in turns if (m.content if m.role == "user" else m.text)]
+        while kept and kept[0].role != "user":
+            kept.pop(0)
+        return kept
 
     @staticmethod
     def _turn_msg(role: str, text: str) -> Msg:
