@@ -16,11 +16,12 @@ class ClaudeEngine:
         self._client = client
         self._model = model
 
-    def complete(self, messages: list[Msg], tools: list[dict]) -> AssistantTurn:
+    def complete(self, messages: list[Msg], tools: list[dict],
+                 system: str = "") -> AssistantTurn:
         response = self._client.messages.create(
             model=self._model,
             max_tokens=_MAX_TOKENS,
-            system=SYSTEM_PROMPT,
+            system=system or SYSTEM_PROMPT,
             tools=tools,
             messages=_to_anthropic(messages),
         )

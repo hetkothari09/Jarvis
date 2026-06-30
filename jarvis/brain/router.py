@@ -17,12 +17,16 @@ StepFn = Callable[[ToolCall, ToolResult], None]
 
 
 def run_command(text: str, registry: Registry, engine: Engine, *,
-                confirm: ConfirmFn, on_step: StepFn, max_steps: int = 12) -> str:
-    messages: list[Msg] = [Msg(role="user", content=text)]
+                confirm: ConfirmFn, on_step: StepFn, max_steps: int = 12,
+                history: "list[Msg] | None" = None, memory_context: str = "") -> str:
+    messages: list[Msg] = list(history or []) + [Msg(role="user", content=text)]
     tools = registry.schemas()
+    system = SYSTEM_PROMPT
+    if memory_context:
+        system = f"{SYSTEM_PROMPT}\n\nKnown about the user:\n{memory_context}"
 
     for _ in range(max_steps):
-        turn: AssistantTurn = engine.complete(messages, tools)
+        turn: AssistantTurn = engine.complete(messages, tools, system)
         messages.append(Msg(role="assistant", text=turn.text, tool_calls=turn.tool_calls))
 
         if turn.is_final:

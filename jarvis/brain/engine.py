@@ -35,14 +35,22 @@ class AssistantTurn:
 
 
 class Engine(Protocol):
-    def complete(self, messages: list[Msg], tools: list[dict]) -> AssistantTurn:
+    def complete(self, messages: list[Msg], tools: list[dict],
+                 system: str = "") -> AssistantTurn:
         ...
 
 
 class FakeEngine:
-    """Returns pre-scripted turns; ignores inputs. For tests only."""
+    """Returns pre-scripted turns; records the last call's inputs. Tests only."""
     def __init__(self, turns: list[AssistantTurn]) -> None:
         self._turns = list(turns)
+        self.last_messages: list[Msg] = []
+        self.last_tools: list[dict] = []
+        self.last_system: str = ""
 
-    def complete(self, messages: list[Msg], tools: list[dict]) -> AssistantTurn:
+    def complete(self, messages: list[Msg], tools: list[dict],
+                 system: str = "") -> AssistantTurn:
+        self.last_messages = list(messages)
+        self.last_tools = list(tools)
+        self.last_system = system
         return self._turns.pop(0)
