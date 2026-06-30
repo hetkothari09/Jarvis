@@ -27,7 +27,7 @@ Tray icon + orb appear. Press `Ctrl+Space` to summon the command palette.
 pytest
 ```
 
-(38 tests; all desktop side-effects are mocked, so nothing on your machine moves.)
+(61 tests; all desktop side-effects are mocked, so nothing on your machine moves.)
 
 ## What it can do (Phase 1)
 
@@ -35,9 +35,15 @@ Open/close apps, focus/arrange windows, find/open files, set volume, media keys,
 clipboard read/write, a gated shell, and general answers. Dangerous actions
 (`run_shell`, `close_app`) require a confirmation click first.
 
+It also remembers durable facts/preferences, keeps short-term conversation
+continuity (follow-ups within a 10-minute window), logs command history, and
+saves named notes — all stored locally in `%APPDATA%\jarvis\jarvis.db`.
+
 ## Architecture
 
 - `jarvis/core` — daemon, event bus, config + keyring secrets
+- `jarvis/memory` — sqlite-backed persistence: durable facts/prefs, time-window
+  conversation continuity, command history, named notes (`store`, `service`, `tools`)
 - `jarvis/brain` — provider-agnostic tool-use loop (`router`), neutral types
   (`engine`), Claude implementation (`claude_engine`)
 - `jarvis/tools` — desktop tools as registered plugins (apps, windows, files,
