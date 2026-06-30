@@ -1,5 +1,6 @@
 """Compose all modules into a running tray application."""
 import threading
+import time
 
 from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtGui import QAction, QIcon, QPixmap, QColor, QPainter
@@ -8,6 +9,8 @@ from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 from anthropic import Anthropic
 
 from jarvis.brain.claude_engine import ClaudeEngine
+from jarvis.memory.service import MemoryService
+from jarvis.memory.store import Store
 from jarvis.brain.engine import ToolCall
 from jarvis.brain.router import run_command
 from jarvis.core.config import Settings, get_api_key
@@ -53,7 +56,11 @@ class Daemon:
                 "  python -c \"from jarvis.core.config import set_api_key; "
                 "set_api_key('sk-ant-...')\"")
         self.engine = ClaudeEngine(client=Anthropic(api_key=key), model=self.settings.model)
-        self.registry = build_registry()
+        self.mem = MemoryService(
+            Store(self.settings.db_path),
+            window_min=self.settings.session_window_min,
+            max_facts=self.settings.max_facts_injected)
+        self.registry = build_registry(self.mem)
 
         self.orb = Orb()
         self.palette = Palette()
@@ -85,6 +92,9 @@ class Daemon:
 
     def _work(self, text: str) -> None:
         self.bridge.state.emit("busy")
+        now = time.time()
+        facts, turns = self.mem.session_context(now)
+        self.mem.record_turn("user", text, now)
 
         def on_step(call: ToolCall, result: ToolResult) -> None:
             status = "ok" if result.ok else f"error: {result.error}"
@@ -93,15 +103,22 @@ class Daemon:
         def confirm(call: ToolCall) -> bool:
             return self._confirm(call)
 
+        errored = False
         try:
             answer = run_command(text, self.registry, self.engine,
                                  confirm=confirm, on_step=on_step,
-                                 max_steps=self.settings.max_steps)
+                                 max_steps=self.settings.max_steps,
+                                 history=turns, memory_context=facts)
             self.bridge.done.emit(answer)
             self.bridge.state.emit("idle")
         except Exception as exc:  # network/engine failure
-            self.bridge.done.emit(f"Error: {exc}")
+            errored = True
+            answer = f"Error: {exc}"
+            self.bridge.done.emit(answer)
             self.bridge.state.emit("error")
+
+        self.mem.record_turn("assistant", answer, time.time())
+        self.mem.record_command(text, ok=not errored, summary=answer[:200], ts=now)
 
     def _confirm(self, call: ToolCall) -> bool:
         """Called on the worker thread. Hand the modal to the main thread and block
